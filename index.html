@@ -1,297 +1,584 @@
-<!DOCTYPE html>
-<html lang="es">
+document.addEventListener("DOMContentLoaded", () => {
+    // 1. Database Init and Preload
+    initIndexedDB(() => {
+        const dateInput = document.getElementById('report-date');
+        if (dateInput) {
+            const today = new Date().toISOString().split('T')[0];
+            
+            // On load, attempt to load today's current saved file if any
+            loadLogFromDB(today, () => {
+                // If nothing was found, at least set date and defaults
+                clearFormAndSetDate(today);
+            });
+        }
+        initCalendar();
+        setupNotifications();
+    });
 
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Informe Diario de Interventoría</title>
-    <link rel="stylesheet" href="styles.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-</head>
+    // 2. Setup Weather Interactive Table
+    setupWeatherTable();
 
-<body>
-    <div class="actions noprint">
-        <button id="btn-print" onclick="exportAndPrint()"><i class="fas fa-print"></i> Exportar / Imprimir PDF</button>
-    </div>
+    // 3. Auto-grow Textareas
+    setupAutoGrow();
+});
 
-    <div class="layout-wrapper">
-        <aside class="calendar-sidebar noprint">
-            <h3 class="calendar-title"><i class="far fa-calendar-check"></i> Registro del Mes</h3>
-            <div class="calendar-nav">
-                <button class="btn-cal-nav" onclick="changeMonth(-1)"><i class="fas fa-chevron-left"></i></button>
-                <div id="calendar-header" class="calendar-header"></div>
-                <button class="btn-cal-nav" onclick="changeMonth(1)"><i class="fas fa-chevron-right"></i></button>
-            </div>
-            <div class="calendar-days-header">
-                <span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span>
-            </div>
-            <div id="calendar-grid" class="calendar-grid">
-                <!-- JS will inject days here -->
-            </div>
-        </aside>
+// Auto-grow textareas to fit content
+function setupAutoGrow() {
+    document.addEventListener('input', function (event) {
+        if (event.target.tagName.toLowerCase() === 'textarea' && event.target.classList.contains('auto-grow')) {
+            autoGrow(event.target);
+        }
+    });
+    // Global checking
+    document.querySelectorAll('textarea.auto-grow').forEach(ta => autoGrow(ta));
+}
 
-        <div class="page-container">
+window.autoGrow = function(element) {
+    element.style.height = 'auto';
+    element.style.height = (element.scrollHeight) + 'px';
+}
 
-            <!-- Header Section -->
-            <header class="header-section">
-                <div class="header-left">
-                    <div class="header-logo-box">
-                        <div class="logo-wrapper">
-                            <img src="logo-reserva.png" alt="Reserva de Guance" class="header-logo-img" />
-                        </div>
-                    </div>
-                </div>
+// Weather Slots Logic
+function setupWeatherTable() {
+    const slotsRow = document.getElementById('weather-slots');
+    if (!slotsRow) return;
 
-                <div class="header-center">
-                    <div class="header-title">
-                        <h1>INFORME DIARIO DE INTERVENTORÍA</h1>
-                        <div class="subtitle-group">
-                            <label>OBRA:</label>
-                            <input type="text" id="obra-name" value="Reserva de Guance"
-                                class="editable-input bold-text" />
-                        </div>
-                    </div>
-                </div>
+    for (let i = 0; i < 12; i++) {
+        const td = document.createElement('td');
+        td.dataset.state = 0;
+        
+        td.innerHTML = `<div class="w-cell"></div>`;
+        
+        td.addEventListener('click', function() {
+            let currentState = parseInt(this.dataset.state);
+            currentState = (currentState + 1) % 3;
+            
+            this.dataset.state = currentState;
+            
+            const cell = this.querySelector('.w-cell');
+            cell.className = 'w-cell';
 
-                <div class="header-right">
-                    <div class="header-logo-box">
-                        <div class="logo-wrapper">
-                            <img src="logo-serra.png" alt="Serra I-A" class="header-logo-img" />
-                        </div>
-                    </div>
-                    <div class="header-meta">
-                        <div class="meta-item">
-                            <label>Código:</label>
-                            <input type="text" value="" class="editable-input" placeholder="Opcional..." />
-                        </div>
-                        <div class="meta-item">
-                            <label>Versión:</label>
-                            <input type="text" value="01" class="editable-input" />
-                        </div>
-                    </div>
-                </div>
-            </header>
+            if (currentState === 1) {
+                cell.classList.add('w-sec');
+                cell.innerHTML = '<i class="fas fa-sun"></i>';
+            } else if (currentState === 2) {
+                cell.classList.add('w-lluvia');
+                cell.innerHTML = '<i class="fas fa-cloud-rain"></i>';
+            } else {
+                cell.innerHTML = '';
+            }
+        });
+        
+        slotsRow.appendChild(td);
+    }
+}
 
-            <!-- General Info Section -->
-            <section class="general-info">
-                <div class="info-group">
-                    <label>Fecha:</label>
-                    <input type="date" id="report-date" class="editable-input" />
-                </div>
-                <div class="info-group">
-                    <label>Tiempo:</label>
-                    <input type="text" value="Nublado" class="editable-input" placeholder="Ej. Sol, Lluvia..." />
-                </div>
-                <div class="info-group">
-                    <label>Temperatura:</label>
-                    <div class="temp-input-wrapper">
-                        <input type="number" value="20" class="editable-input" /> <span>°C</span>
-                    </div>
-                </div>
-            </section>
+// Table Rows Manipulations
+window.removeRow = function(btn) {
+    const row = btn.closest('tr');
+    if(row) row.remove();
+}
 
-            <!-- Weather Table Section -->
-            <section class="section-block">
-                <h2 class="section-title">ESTADO DEL CLIMA</h2>
-                <div class="weather-instructions noprint">
-                    <small><i class="fas fa-info-circle"></i> Haz clic en las celdas de horas para alternar entre Seco y
-                        Lluvia según la hora correspondiente.</small>
-                </div>
-                <div class="weather-table-container">
-                    <table class="weather-table">
-                        <thead>
-                            <tr>
-                                <td rowspan="2" class="th-label">ESTADO DEL TIEMPO</td>
-                                <td colspan="12" class="th-sec-lluvia">
-                                    <div class="estado-legend">
-                                        <span class="legend-item sec"><i class="fas fa-sun"></i> SECO</span>
-                                        <span class="legend-item lluvia"><i class="fas fa-cloud-rain"></i> LLUVIA</span>
-                                    </div>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th colspan="6">am</th>
-                                <th colspan="6">pm</th>
-                            </tr>
-                            <tr class="hours-row">
-                                <th>7</th>
-                                <th>8</th>
-                                <th>9</th>
-                                <th>10</th>
-                                <th>11</th>
-                                <th>12</th>
-                                <th>13</th>
-                                <th>14</th>
-                                <th>15</th>
-                                <th>16</th>
-                                <th>17</th>
-                                <th>18</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr class="weather-slots" id="weather-slots">
-                                <!-- JS will populate the 12 cells here -->
-                            </tr>
-                        </tbody>
-                    </table>
-                    <div class="precipitaciones-box">
-                        <div class="precipitaciones-row">
-                            <label>Precipitaciones:</label>
-                            <input type="text" class="editable-input full-width"
-                                placeholder="Ingrese detalles de precipitaciones...">
-                        </div>
-                        <div class="precipitaciones-row">
-                            <label>Nota:</label>
-                            <textarea class="editable-input full-width auto-grow" rows="1"
-                                placeholder="Información adicional del clima..."></textarea>
-                        </div>
-                    </div>
-                </div>
-            </section>
+window.addPersonRow = function() {
+    addPersonRowWithData(["", "", ""]);
+}
 
-            <!-- Personnel Table Section -->
-            <section class="section-block">
-                <div class="section-header">
-                    <h2 class="section-title">PERSONAL EN OBRA</h2>
-                    <button class="btn-add noprint" onclick="addPersonRow()"><i class="fas fa-plus"></i> Añadir
-                        Registro</button>
-                </div>
-                <div class="table-responsive">
-                    <table class="data-table" id="personnel-table">
-                        <thead>
-                            <tr>
-                                <th width="30%">EMPRESA O CONTRATISTA</th>
-                                <th width="30%">CANTIDAD Y ROL</th>
-                                <th width="40%">ACTIVIDADES</th>
-                                <th class="noprint" width="5%"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="personnel-body">
-                            <!-- Default Row -->
-                            <tr>
-                                <td><textarea class="editable-input full-width auto-grow"
-                                        rows="2">SERRA I&A S.A.S</textarea></td>
-                                <td><textarea class="editable-input full-width auto-grow" rows="2">1 Profesional
-(Residente de interventoría)</textarea></td>
-                                <td><textarea class="editable-input full-width auto-grow"
-                                        rows="2">Verificación y control de avance de obra</textarea></td>
-                                <td class="noprint text-center"><button class="btn-delete" onclick="removeRow(this)"><i
-                                            class="fas fa-trash"></i></button></td>
-                            </tr>
-                            <tr>
-                                <td><textarea class="editable-input full-width auto-grow"
-                                        rows="3">PORTICO S.A.S.</textarea></td>
-                                <td><textarea class="editable-input full-width auto-grow" rows="3">1 Profesional
-(Residente de obra)
-1 Ayudante de obra</textarea></td>
-                                <td><textarea class="editable-input full-width auto-grow" rows="3">Ejecución de obra
+window.addMaterialRow = function() {
+    addMaterialRowWithData(["", "", "", "", ""]);
+}
 
-Oficios varios</textarea></td>
-                                <td class="noprint text-center"><button class="btn-delete" onclick="removeRow(this)"><i
-                                            class="fas fa-trash"></i></button></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+function addPersonRowWithData(dataArr) {
+    const tbody = document.getElementById('personnel-body');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td><textarea class="editable-input full-width auto-grow" rows="1">${dataArr[0]}</textarea></td>
+        <td><textarea class="editable-input full-width auto-grow" rows="1">${dataArr[1]}</textarea></td>
+        <td><textarea class="editable-input full-width auto-grow" rows="1">${dataArr[2]}</textarea></td>
+        <td class="noprint text-center"><button class="btn-delete" onclick="removeRow(this)"><i class="fas fa-trash"></i></button></td>
+    `;
+    tbody.appendChild(tr);
+    tr.querySelectorAll('.auto-grow').forEach(ta => autoGrow(ta));
+}
 
-            <!-- Materials Table Section -->
-            <section class="section-block mt-page-break"> <!-- Added margin or page break if needed -->
-                <div class="section-header">
-                    <h2 class="section-title">RECEPCIONES DE MATERIAL O EQUIPO</h2>
-                    <button class="btn-add noprint" onclick="addMaterialRow()"><i class="fas fa-plus"></i> Añadir
-                        Material</button>
-                </div>
-                <div class="table-responsive">
-                    <table class="data-table" id="materials-table">
-                        <thead>
-                            <tr>
-                                <th width="15%">Fecha</th>
-                                <th width="10%">Hora</th>
-                                <th width="35%">Material/equipo</th>
-                                <th width="15%">Cantidad</th>
-                                <th width="25%">Observaciones</th>
-                                <th class="noprint" width="5%"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="materials-body">
-                            <tr>
-                                <td><input type="date" class="editable-input full-width" /></td>
-                                <td><input type="time" class="editable-input full-width" /></td>
-                                <td><textarea class="editable-input full-width auto-grow" rows="1"></textarea></td>
-                                <td><input type="text" class="editable-input full-width" /></td>
-                                <td><textarea class="editable-input full-width auto-grow" rows="1"></textarea></td>
-                                <td class="noprint text-center"><button class="btn-delete" onclick="removeRow(this)"><i
-                                            class="fas fa-trash"></i></button></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+function addMaterialRowWithData(dataArr) {
+    const tbody = document.getElementById('materials-body');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+        <td><input type="date" class="editable-input full-width" value="${dataArr[0]}" /></td>
+        <td><input type="time" class="editable-input full-width" value="${dataArr[1]}" /></td>
+        <td><textarea class="editable-input full-width auto-grow" rows="1">${dataArr[2]}</textarea></td>
+        <td><input type="text" class="editable-input full-width" value="${dataArr[3]}" /></td>
+        <td><textarea class="editable-input full-width auto-grow" rows="1">${dataArr[4]}</textarea></td>
+        <td class="noprint text-center"><button class="btn-delete" onclick="removeRow(this)"><i class="fas fa-trash"></i></button></td>
+    `;
+    tbody.appendChild(tr);
+    tr.querySelectorAll('.auto-grow').forEach(ta => autoGrow(ta));
+}
 
-            <!-- Field Activities Section -->
-            <section class="section-block">
-                <h2 class="section-title">ACTIVIDADES EN CAMPO</h2>
-                <div class="textarea-container">
-                    <textarea class="editable-input full-width auto-grow description-area" rows="4"
-                        placeholder="Describa las actividades de campo que se están realizando..."></textarea>
-                </div>
-            </section>
+// Signatures
+window.addSignatureBox = function(dataArr = ["", "", "", ""]) {
+    const container = document.getElementById('signatures-container');
+    if (!container) return;
+    const box = document.createElement('div');
+    const uniqueId = 'sig-upload-' + Math.random().toString(36).substr(2, 9);
+    box.className = 'signature-box';
+    box.style.position = 'relative';
+    
+    const imgHtml = dataArr[3] ? `<img src="${dataArr[3]}" class="signature-img" />` : '';
 
-            <!-- Photos Section -->
-            <section class="section-block page-break-before">
-                <div class="section-header">
-                    <h2 class="section-title">REGISTRO FOTOGRÁFICO</h2>
-                    <div class="photo-actions noprint">
-                        <label for="camera-upload" class="btn-add photo-btn">
-                            <i class="fas fa-camera"></i> Tomar Foto
-                        </label>
-                        <input type="file" id="camera-upload" class="hidden" accept="image/*" capture="environment"
-                            onchange="handleImageUpload(event)" />
+    box.innerHTML = `
+        <div class="signature-img-container">
+            ${imgHtml}
+            <label for="${uniqueId}" class="signature-upload-btn noprint"><i class="fas fa-upload"></i> Firma</label>
+            <input type="file" id="${uniqueId}" class="hidden" accept="image/*" onchange="handleSignatureUpload(event, this)" />
+        </div>
+        <div class="sign-line"></div>
+        <input type="text" class="editable-input bold-text text-center full-width sig-name" value="${dataArr[0] || ''}" placeholder="Nombre" />
+        <input type="text" class="editable-input text-center text-sm full-width sig-role" value="${dataArr[1] || ''}" placeholder="Cargo" />
+        <input type="text" class="editable-input text-center text-sm full-width sig-company" value="${dataArr[2] || ''}" placeholder="Empresa" />
+        <input type="hidden" class="sig-base64" value="${dataArr[3] || ''}" />
+        <button class="btn-delete signature-delete-btn noprint" onclick="this.parentElement.remove()" style="position: absolute; top: -5px; right: 0; padding: 2px;"><i class="fas fa-times"></i></button>
+    `;
+    container.appendChild(box);
+}
 
-                        <label for="photo-upload" class="btn-add photo-btn">
-                            <i class="fas fa-upload"></i> Subir Imágenes
-                        </label>
-                        <input type="file" id="photo-upload" class="hidden" multiple accept="image/*"
-                            onchange="handleImageUpload(event)" />
-                    </div>
-                </div>
+window.handleSignatureUpload = function(event, inputElem) {
+    const file = event.target.files[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const box = inputElem.closest('.signature-box');
+        let img = box.querySelector('.signature-img');
+        if (!img) {
+            img = document.createElement('img');
+            img.className = 'signature-img';
+            box.querySelector('.signature-img-container').prepend(img);
+        }
+        img.src = e.target.result;
+        box.querySelector('.sig-base64').value = e.target.result;
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+}
 
-                <div class="photos-grid" id="photos-grid">
-                    <!-- Example of Empty State for Printing if no photos -->
-                    <div class="empty-photos msg noprint" id="empty-photos-msg">
-                        <i class="fas fa-images"></i>
-                        <p>No hay fotos agregadas. Haz clic en "Subir Imágenes" para agregar evidencia.</p>
-                    </div>
-                </div>
-            </section>
+// Photo Uploads
+window.handleImageUpload = function(event) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
 
-            <!-- Recommendations Section -->
-            <section class="section-block">
-                <h2 class="section-title">RECOMENDACIONES.</h2>
-                <div class="textarea-container">
-                    <textarea class="editable-input full-width auto-grow" rows="4"
-                        placeholder="Ingrese recomendaciones u observaciones finales..."></textarea>
-                </div>
-            </section>
+    const emptyMsg = document.getElementById('empty-photos-msg');
+    if (emptyMsg) emptyMsg.style.display = 'none';
 
-            <!-- Signatures Section -->
-            <section class="section-block page-break-before">
-                <div class="section-header">
-                    <h2 class="section-title">FIRMAS</h2>
-                    <button class="btn-add noprint" onclick="addSignatureBox()"><i class="fas fa-plus"></i> Añadir
-                        Firma</button>
-                </div>
-                <div class="signatures-section" id="signatures-container">
-                    <!-- JS will populate signatures here -->
-                </div>
-            </section>
+    Array.from(files).forEach(file => {
+        if (!file.type.startsWith('image/')) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            injectPhoto(e.target.result, "");
+        };
+        reader.readAsDataURL(file);
+    });
+    event.target.value = '';
+}
 
-        </div> <!-- End page-container -->
-    </div> <!-- End layout-wrapper -->
+// Clipboard Paste Support for Photos
+window.addEventListener('paste', function(e) {
+    const items = (e.clipboardData || window.clipboardData).items;
+    if (!items) return;
 
-    <script src="app.js"></script>
-</body>
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image/') !== -1) {
+            const file = items[i].getAsFile();
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    injectPhoto(event.target.result, '');
+                    const emptyMsg = document.getElementById('empty-photos-msg');
+                    if (emptyMsg) emptyMsg.style.display = 'none';
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+    }
+});
 
-</html>
+function injectPhoto(imgSrc, captionStr = '') {
+    const grid = document.getElementById('photos-grid');
+    const photoItem = document.createElement('div');
+    photoItem.className = 'photo-item';
+    photoItem.innerHTML = `
+        <div class="photo-img-wrapper">
+            <img src="${imgSrc}" alt="Registro Fotográfico" />
+            <button class="photo-remove-btn noprint" onclick="removePhoto(this)"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="photo-caption">
+            <textarea class="editable-input full-width auto-grow" rows="2" placeholder="Describa la actividad en la foto...">${captionStr}</textarea>
+        </div>
+    `;
+    grid.appendChild(photoItem);
+    const newTextarea = photoItem.querySelector('textarea');
+    if (newTextarea) autoGrow(newTextarea);
+
+    document.getElementById('empty-photos-msg').style.display = 'none';
+}
+
+window.removePhoto = function(btn) {
+    const photoItem = btn.closest('.photo-item');
+    if (photoItem) {
+        photoItem.remove();
+        const grid = document.getElementById('photos-grid');
+        if (grid.querySelectorAll('.photo-item').length === 0) {
+            const emptyMsg = document.getElementById('empty-photos-msg');
+            if (emptyMsg) emptyMsg.style.display = 'flex';
+        }
+    }
+}
+
+// =========================================================
+// INDEXEDDB OFFLINE STORAGE LOGIC
+// =========================================================
+const DB_NAME = "BitacorasOfflineDB";
+const DB_VERSION = 1;
+window.db = null;
+
+function initIndexedDB(callback) {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onerror = (e) => console.error("Database error: ", e);
+    request.onupgradeneeded = (e) => {
+        const dbInstance = e.target.result;
+        if (!dbInstance.objectStoreNames.contains("logs")) {
+            dbInstance.createObjectStore("logs", { keyPath: "date" });
+        }
+    };
+    request.onsuccess = (e) => {
+        window.db = e.target.result;
+        console.log("Database initialized successfully.");
+        if (callback) callback();
+    };
+}
+
+function getAllKeys(callback) {
+    if (!window.db) return callback([]);
+    const tx = window.db.transaction("logs", "readonly");
+    const req = tx.objectStore("logs").getAllKeys();
+    req.onsuccess = () => callback(req.result || []);
+}
+
+function loadLogFromDB(dateStr, notFoundCallback) {
+    if (!window.db) return;
+    const tx = window.db.transaction("logs", "readonly");
+    const req = tx.objectStore("logs").get(dateStr);
+    req.onsuccess = () => {
+        if (req.result) {
+            deserializeForm(req.result);
+        } else {
+            if (notFoundCallback) notFoundCallback();
+        }
+    };
+}
+
+// The core export and print feature
+window.exportAndPrint = function() {
+    const dateInput = document.getElementById('report-date').value;
+    if (!dateInput) {
+        alert("Por favor escoge una fecha de reporte antes de guardar.");
+        return;
+    }
+
+    const dataObj = serializeForm(dateInput);
+    
+    // Save to Database
+    const tx = window.db.transaction("logs", "readwrite");
+    const store = tx.objectStore("logs");
+    store.put(dataObj);
+
+    tx.oncomplete = () => {
+        initCalendar(); // Refresh Side Calendar
+        // Small delay to ensure rendering finished before print wrapper halts engine
+        setTimeout(() => window.print(), 100);
+    };
+}
+
+// Grabs all values from DOM into a neat JSON
+function serializeForm(dateStr) {
+    const data = {
+        date: dateStr,
+        obra: document.getElementById('obra-name').value,
+        codigo: document.querySelectorAll('.header-meta input')[0].value,
+        version: document.querySelectorAll('.header-meta input')[1].value,
+        tiempo: document.querySelectorAll('.general-info input')[1].value,
+        temperatura: document.querySelectorAll('.temp-input-wrapper input')[0].value,
+        weatherSlots: Array.from(document.getElementById('weather-slots').children).map(td => td.dataset.state),
+        precipitaciones: document.querySelectorAll('.precipitaciones-box input')[0].value,
+        notaClima: document.querySelectorAll('.precipitaciones-box textarea')[0].value,
+        actividadesCampo: document.querySelectorAll('.textarea-container textarea')[0].value,
+        recomendaciones: document.querySelectorAll('.textarea-container textarea')[1].value,
+        signatures: []
+    };
+
+    // Serialize sign boxes specifically
+    document.querySelectorAll('.signature-box').forEach(box => {
+        const inputs = box.querySelectorAll('input[type="text"]');
+        const imgInput = box.querySelector('.sig-base64');
+        if (inputs.length >= 3) {
+            data.signatures.push({
+                nombre: inputs[0].value,
+                cargo: inputs[1].value,
+                empresa: inputs[2].value,
+                img: imgInput ? imgInput.value : ''
+            });
+        }
+    });
+
+    // Personal dynamic rows
+    data.personnel = [];
+    document.querySelectorAll('#personnel-body tr').forEach(tr => {
+        const textareas = tr.querySelectorAll('textarea');
+        if (textareas.length >= 3) {
+            data.personnel.push([textareas[0].value, textareas[1].value, textareas[2].value]);
+        }
+    });
+
+    // Materials dynamic rows
+    data.materials = [];
+    document.querySelectorAll('#materials-body tr').forEach(tr => {
+        const inputs = tr.querySelectorAll('input, textarea');
+        if (inputs.length >= 5) {
+            data.materials.push([inputs[0].value, inputs[1].value, inputs[2].value, inputs[3].value, inputs[4].value]);
+        }
+    });
+
+    // Photos array of Base64 strings and captions
+    data.photos = [];
+    document.querySelectorAll('.photo-item').forEach(item => {
+        const img = item.querySelector('img').src;
+        const caption = item.querySelector('textarea').value;
+        data.photos.push({ img, caption });
+    });
+
+    return data;
+}
+
+// Injects JSON data back to DOM visually
+function deserializeForm(data) {
+    if (!data) return;
+
+    document.getElementById('report-date').value = data.date;
+    document.getElementById('obra-name').value = data.obra || '';
+    
+    document.querySelectorAll('.header-meta input')[0].value = data.codigo || '';
+    document.querySelectorAll('.header-meta input')[1].value = data.version || '';
+    document.querySelectorAll('.general-info input')[1].value = data.tiempo || '';
+    document.querySelectorAll('.temp-input-wrapper input')[0].value = data.temperatura || '';
+
+    // Weather
+    const slots = document.getElementById('weather-slots').children;
+    if (data.weatherSlots) {
+        data.weatherSlots.forEach((state, i) => {
+            if (slots[i]) {
+                const td = slots[i];
+                td.dataset.state = state;
+                let cell = td.querySelector('.w-cell');
+                if (!cell) {
+                    td.innerHTML = `<div class="w-cell"></div>`;
+                    cell = td.querySelector('.w-cell');
+                }
+                cell.className = 'w-cell';
+                cell.innerHTML = '';
+                
+                if(state == 1) {
+                    cell.classList.add('w-sec');
+                    cell.innerHTML = '<i class="fas fa-sun"></i>';
+                }
+                if(state == 2) {
+                    cell.classList.add('w-lluvia');
+                    cell.innerHTML = '<i class="fas fa-cloud-rain"></i>';
+                }
+            }
+        });
+    }
+
+    document.querySelectorAll('.precipitaciones-box input')[0].value = data.precipitaciones || '';
+    document.querySelectorAll('.precipitaciones-box textarea')[0].value = data.notaClima || '';
+    
+    const textareas = document.querySelectorAll('.textarea-container textarea');
+    textareas[0].value = data.actividadesCampo || '';
+    textareas[1].value = data.recomendaciones || '';
+
+    // Dynamic Lists
+    document.getElementById('personnel-body').innerHTML = '';
+    if (data.personnel && data.personnel.length > 0) {
+        data.personnel.forEach(row => addPersonRowWithData(row));
+    } else {
+        addPersonRowWithData(["", "", ""]);
+    }
+
+    document.getElementById('materials-body').innerHTML = '';
+    if (data.materials && data.materials.length > 0) {
+        data.materials.forEach(row => addMaterialRowWithData(row));
+    } else {
+        addMaterialRowWithData(["", "", "", "", ""]);
+    }
+
+    // Signatures
+    const container = document.getElementById('signatures-container');
+    if (container) container.innerHTML = '';
+    if (data.signatures && data.signatures.length > 0) {
+        if (typeof data.signatures[0] === 'string') {
+            // Backward compatibility
+            for (let i = 0; i < data.signatures.length; i += 3) {
+                window.addSignatureBox([data.signatures[i] || '', data.signatures[i+1] || '', data.signatures[i+2] || '', '']);
+            }
+        } else {
+            // New Array of Objects format
+            data.signatures.forEach(sig => {
+                window.addSignatureBox([sig.nombre || '', sig.cargo || '', sig.empresa || '', sig.img || '']);
+            });
+        }
+    } else {
+        window.addSignatureBox(["", "", "", ""]);
+    }
+
+    // Photos
+    document.querySelectorAll('.photo-item').forEach(p => p.remove());
+    document.getElementById('empty-photos-msg').style.display = 'flex';
+    if (data.photos) {
+        data.photos.forEach(photo => injectPhoto(photo.img, photo.caption));
+    }
+
+    // Fix height adjustments
+    document.querySelectorAll('textarea.auto-grow').forEach(ta => autoGrow(ta));
+}
+
+function clearFormAndSetDate(dateStr) {
+    // Defines a blank state
+    const blank = {
+        date: dateStr, obra: 'Reserva de Guance', codigo: '', version: '01', tiempo: '', temperatura: '',
+        weatherSlots: Array(12).fill(0), precipitaciones: '', notaClima: '', actividadesCampo: '', recomendaciones: '',
+        signatures: [
+            { nombre: 'Arq. Filemón Arias', cargo: 'Residente de Interventoría', empresa: 'SERRA I&A S.A.S', img: '' },
+            { nombre: 'Arq. Wilmer', cargo: 'Residente de Obra', empresa: 'PORTICO', img: '' }
+        ],
+        personnel: [
+            ['SERRA I&A S.A.S', '1 Profesional\n(Residente de interventoría)', 'Verificación y control de avance de obra'],
+            ['PORTICO S.A.S', '1 Profesional\n(Residente de obra)', 'Ejecución de obra'],
+            ['PORTICO S.A.S', '1 Ayudante de obra', 'Oficios varios'],
+            ['G&G Ingenieros Asociados', '1 Topógrafo\n1 Operario retroexcavadora\n1 SST\n1 Oficial', 'Tareas asignadas']
+        ], 
+        materials: [['', '', '', '', '']], photos: []
+    };
+    deserializeForm(blank);
+}
+
+// =========================================================
+// CALENDAR WIDGET LOGIC
+// =========================================================
+let currentDisplayedMonth = new Date().getMonth();
+let currentDisplayedYear = new Date().getFullYear();
+
+window.changeMonth = function(offset) {
+    currentDisplayedMonth += offset;
+    if (currentDisplayedMonth < 0) {
+        currentDisplayedMonth = 11;
+        currentDisplayedYear--;
+    } else if (currentDisplayedMonth > 11) {
+        currentDisplayedMonth = 0;
+        currentDisplayedYear++;
+    }
+    initCalendar();
+}
+
+function initCalendar() {
+    const grid = document.getElementById('calendar-grid');
+    if (!grid) return;
+
+    getAllKeys((completedLogs) => {
+        grid.innerHTML = '';
+        const now = new Date();
+        const todayStr = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+        
+        document.getElementById('calendar-header').innerText = 
+            ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"][currentDisplayedMonth] + " " + currentDisplayedYear;
+
+        const firstDay = new Date(currentDisplayedYear, currentDisplayedMonth, 1);
+        const lastDay = new Date(currentDisplayedYear, currentDisplayedMonth + 1, 0);
+        let startDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1; 
+
+        for (let i = 0; i < startDayOfWeek; i++) {
+            const blank = document.createElement('div');
+            blank.className = 'cal-day';
+            grid.appendChild(blank);
+        }
+
+        for (let i = 1; i <= lastDay.getDate(); i++) {
+            const dayDiv = document.createElement('div');
+            dayDiv.className = 'cal-day current-month';
+            dayDiv.innerText = i;
+            dayDiv.style.cursor = 'pointer';
+            
+            const loopDateStr = `${currentDisplayedYear}-${String(currentDisplayedMonth + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+
+            if (loopDateStr <= todayStr) {
+                if (completedLogs.includes(loopDateStr)) {
+                    dayDiv.classList.add('done');
+                    dayDiv.innerHTML += ' <i class="fas fa-check"></i>';
+                } else {
+                    dayDiv.classList.add('missed');
+                    dayDiv.innerHTML += ' <i class="fas fa-times"></i>';
+                }
+            }
+
+            // Click interaction to load historical data
+            dayDiv.onclick = () => {
+                const isSaved = completedLogs.includes(loopDateStr);
+                
+                // Adding a sleek visual feedback 
+                grid.querySelectorAll('.cal-day').forEach(d => d.style.boxShadow = 'none');
+                dayDiv.style.boxShadow = 'inset 0 0 0 2px var(--accent)';
+
+                if (isSaved) {
+                    loadLogFromDB(loopDateStr);
+                } else {
+                    clearFormAndSetDate(loopDateStr);
+                }
+                
+                // Focus on top of document so mobile user knows form was updated
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            grid.appendChild(dayDiv);
+        }
+    });
+}
+
+// =========================================================
+// NOTIFICATION LOGIC
+// =========================================================
+let notificationShownToday = false;
+
+function setupNotifications() {
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "denied" && Notification.permission !== "granted") {
+        Notification.requestPermission();
+    }
+    setInterval(checkReminder, 60000);
+    checkReminder();
+}
+
+function checkReminder() {
+    const now = new Date();
+    const todayStr = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+
+    getAllKeys((completedLogs) => {
+        if (now.getHours() >= 16) {
+            if (!completedLogs.includes(todayStr) && !notificationShownToday) {
+                if (Notification.permission === "granted") {
+                    new Notification("¡Recordatorio de Bitácora!", {
+                        body: "Ya son más de las 4 PM. No olvides registrar la bitácora de obra de hoy.",
+                        icon: "https://cdn-icons-png.flaticon.com/512/2832/2832810.png"
+                    });
+                    notificationShownToday = true;
+                }
+            }
+        }
+    });
+}
